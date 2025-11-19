@@ -3,7 +3,7 @@ import time
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from paystackapi.transaction import Transaction
+from paystack import Transaction  # Official – no .transaction
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
@@ -58,13 +58,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ref = f"escrow_{chat_id}_{int(time.time())}"
             # Initialize transaction (for payment link)
             response = Transaction.initialize(
-                amount=amount * 100,  # kobo
-                email=f"buyer_{user_id}@escrowsule.com",  # dummy
+                amount=amount * 100,  # Kobo
+                email=f"buyer_{user_id}@vaultp2p.com",
                 reference=ref,
                 callback_url=os.getenv("RAILWAY_URL", "https://your-app.railway.app") + "/webhook"
             )
-            if response['status']:
-                pay_link = response['data']['authorization_url']
+            if response["status"]:
+                pay_link = response["data"]["authorization_url"]
                 # Save pending trade to Supabase
                 data = {
                     "chat_id": chat_id,
