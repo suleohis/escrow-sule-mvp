@@ -3,7 +3,7 @@ import time
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from paystack import Transaction  # Official – no .transaction
+import paystack
 from supabase import create_client, Client
 from dotenv import load_dotenv
 
@@ -11,7 +11,7 @@ load_dotenv()
 
 # Init clients
 supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
-Transaction.set_secret_key(os.getenv("PAYSTACK_SECRET_KEY"))  # Use TEST for now: sk_test_...
+paystack.secret_key = os.getenv("PAYSTACK_SECRET_KEY")  # Use TEST for now: sk_test_...
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
@@ -57,13 +57,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Generate Paystack ref
             ref = f"escrow_{chat_id}_{int(time.time())}"
             # Initialize transaction (for payment link)
-            response = Transaction.initialize(
+            response = paystack.transaction.initialize(
                 amount=amount * 100,  # Kobo
                 email=f"buyer_{user_id}@vaultp2p.com",
                 reference=ref,
                 callback_url=os.getenv("RAILWAY_URL", "https://your-app.railway.app") + "/webhook"
             )
-            if response["status"]:
+            if response.get("status"):
                 pay_link = response["data"]["authorization_url"]
                 # Save pending trade to Supabase
                 data = {
