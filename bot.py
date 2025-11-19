@@ -2,7 +2,7 @@ import os
 import time
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters,  ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from paystackapi.transaction import Transaction
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -10,10 +10,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Init clients
-supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv('SUPABASE_KEY'))
-Transaction.set_secret_key(os.getenv("PAYSTACK_SECRET_KEY")) 
+supabase: Client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+Transaction.set_secret_key(os.getenv("PAYSTACK_SECRET_KEY"))  # Use TEST for now: sk_test_...
 
-BOT_TOKEN = os.getenv('BOT_TOKEN')
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -22,9 +22,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "🇳🇬 Welcome to @EscrowSule - Safest P2P Escrow in Nigerian!\n\n"
+        "🇳🇬 Welcome to @EscrowSule – Safest P2P Escrow in Nigeria!\n\n"
         "🔒 Money held until you get your USDT.\n"
-        "💸 Only 0.5% fee. \n\n"
+        "💸 Only 0.5% fee.\n\n"
         "Buying or Selling USDT? Pick below:",
         reply_markup=reply_markup
     )
@@ -34,17 +34,17 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     if query.data == "role_buyer":
-        await query.edit_message_test("Enter amount in NGN (e.g., 50000)")
+        await query.edit_message_text("Enter amount in NGN (e.g., 50000):")
         context.user_data['role'] = 'buyer'
-        context.user_data['waiting'] = 'amount'
+        context.user_data['waiting_for'] = 'amount'
     elif query.data == "role_seller":
-        await query.edit_messages_text(
+        await query.edit_message_text(
             "Enter amount in NGN & your bank details:\n"
-            "Format: 5000 | Zenith | 1234567890"
+            "Format: 50000 | Zenith | 1234567890"
         )
         context.user_data['role'] = 'seller'
         context.user_data['waiting_for'] = 'seller_details'
-    #Add more callback for wallet/bank collection later
+    # Add more callbacks for wallet/bank collection later
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
@@ -58,24 +58,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ref = f"escrow_{chat_id}_{int(time.time())}"
             # Initialize transaction (for payment link)
             response = Transaction.initialize(
-                amount-amount * 100, #kobo
-                email=f"buyer_{user_id}@escrowsule.com", #dumy
+                amount=amount * 100,  # kobo
+                email=f"buyer_{user_id}@escrowsule.com",  # dummy
                 reference=ref,
                 callback_url=os.getenv("RAILWAY_URL", "https://your-app.railway.app") + "/webhook"
             )
             if response['status']:
                 pay_link = response['data']['authorization_url']
-                # save pending trade to Supabase
+                # Save pending trade to Supabase
                 data = {
                     "chat_id": chat_id,
                     "buyer_id": user_id,
-                    "seller_id": None, # Will match later via group chat or manual
+                    "seller_id": None,  # Will match later via group chat or manual
                     "amount_ngn": amount,
                     "status": "pending_payment",
                     "paystack_ref": ref
                 }
                 supabase.table("trades").insert(data).execute()
-
+                
                 keyboard = [[InlineKeyboardButton("💳 Pay Now", url=pay_link)]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await update.message.reply_text(
@@ -85,17 +85,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 context.user_data['trade_ref'] = ref
             else:
-                await update.message.reply_text("Invalid amount. Enter number only.")
+                await update.message.reply_text("Payment init failed. Try again.")
         except ValueError:
-            await update.message.repy_text("Invalid amount. Enter number only.")
-        context.user_data('waiting_for') == None
+            await update.message.reply_text("Invalid amount. Enter numbers only.")
+        context.user_data['waiting_for'] = None
 
-    # Seller details hander (simplifited for MVP - expand to full matching)
-    elif  context.user_data.get('waiting_for') == 'seller_details':
+    # Seller details handler (simplified for MVP – expand to full matching)
+    elif context.user_data.get('waiting_for') == 'seller_details':
         parts = text.split('|')
         if len(parts) == 3:
             amount, bank_name, account = parts[0].strip(), parts[1].strip(), parts[2].strip()
-            await update.message.reply_text(f"Got it! Amount: ₦{amount:,} | Bank: {bank_name} | Acc: {account}\nShare this ad in Binance groups: 'Selling {amount/1600:.2f} USDT via @EscrowSule'")
+            await update.message.reply_text(f"Got it! Amount: ₦{amount:,} | Bank: {bank_name} | Acct: {account}\nShare this ad in Binance groups: 'Selling {amount/1600:.2f} USDT via @EscrowSule'")
             # Save seller info (match to buyer later via /match command or chat_id)
         context.user_data['waiting_for'] = None
 
@@ -106,35 +106,35 @@ async def release(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not result.data:
         await update.message.reply_text("No active trade to release. Use /start.")
         return
-    
+
     trade = result.data[0]
-    amount = trade['amount_ngn']
-    fee = int(amount * 0.005)
+    amount = trade["amount_ngn"]
+    fee = int(amount * 0.005)  # 0.5%
     payout = amount - fee
 
-    # for MVP: Simulate payout (use Paystack Transfer API for live)
-    # transfer = Transfer.create(recipient= "seller_recipient_code", amount=payout * 100)
-
-    # update status
+    # For MVP: Simulate payout (use Paystack Transfer API for live)
+    # transfer = Transfer.create(recipient="seller_recipient_code", amount=payout * 100)
+    
+    # Update status
     supabase.table("trades").update({"status": "released"}).eq("id", trade["id"]).execute()
-
+    
     await update.message.reply_text(
-        f"✅ Released! Seller get ₦{payout:,} (fee: ₦{fee:,}).\n"
+        f"✅ Released! Seller gets ₦{payout:,} (fee: ₦{fee:,}).\n"
         "USDT confirmed? Buyer, rate us! 🚀"
     )
     # Notify buyer
-    await context.bot.send_message(trade["chat_id"], "Funds relased to seller. Check your USDT! 💸")
+    await context.bot.send_message(trade["chat_id"], "Funds released to seller. Check your USDT! 💸")
 
-# Admin command for disputes (add you Telegram ID)
+# Admin command for disputes (add your Telegram ID)
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user_id != YOUR_ADMIN_ID: # Replace with your Telegram user ID
+    if update.effective_user.id != YOUR_ADMIN_ID:  # Replace with your Telegram user ID
         return
-    pending = supabase.table("trades").seletct("*").eq("status", "paid").gt("created_at", "now() - interval '24 hours'").execute()
-    await update.message.reply_text(f"Pending trades: {len(pending.data)}\nUser /release or /refund [id]")
+    pending = supabase.table("trades").select("*").eq("status", "paid").gt("created_at", "now() - interval '24 hours'").execute()
+    await update.message.reply_text(f"Pending trades: {len(pending.data)}\nUse /release or /refund [id]")
 
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler('start', start))
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("release", release))
     app.add_handler(CommandHandler("admin", admin))
     app.add_handler(CallbackQueryHandler(button_handler))
