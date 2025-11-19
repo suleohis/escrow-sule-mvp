@@ -1,30 +1,39 @@
 from flask import Flask, request, abort
 import os
-import paystack  # Just import the whole package
+import paystack
 from supabase import create_client
 from dotenv import load_dotenv
 
 load_dotenv()
 app = Flask(__name__)
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 
-# Set secret key globally (official way)
+# Initialize clients
+supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
 paystack.secret_key = os.getenv("PAYSTACK_SECRET_KEY")
 
 @app.route("/webhook", methods=["POST"])
-def webhook():
+def paystack_webhook():
     payload = request.get_data(as_text=True)
-    sig_header = request.headers.get("x-paystack-signature")
+    signature = request.headers.get("x-paystack-signature")
 
-    # Verify signature (official method)
-    if not paystack.webhook.verify_signature(payload, sig_header):
-        abort(401)
+    # Verify it's really Paystack
+    if not paystack.webhook.verify_signature(payload, signature):
+        abort(400)
 
-    event = request.json
-    if event.get("event") == "charge.success":
+    event = request.get_json()
+
+    if event["event"] == "charge.success":
         ref = event["data"]["reference"]
-        supabase.table("trades").update({"status": "paid"}).eq("paystack_ref", ref).execute()
-        print(f"✅ VaultP2P: Payment confirmed {ref} – ₦ held tight! 🔒")
+        amount_paid = event["data"]["amount"] / 100  # Convert kobo to NGN
+
+        # Mark trade as paid in Supabase
+        result = supabase.table("trades")\
+            .update({"status": "paid", "paid_at": "now()", "amount_paid": amount_paid})\
+            .eq("paystack_ref", ref)\
+            .execute()
+
+        if result.data:
+            print(f"VAULT LOCKED: {ref} – ₦{amount_paid:,.0f} held safely! 🔒")
 
     return "", 200
 
