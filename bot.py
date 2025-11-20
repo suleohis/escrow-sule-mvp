@@ -117,6 +117,64 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         supabase.table("trades").insert(trade_data).execute()
 
+        # Initialize Paystack payment (FIX: reference FIRST, then amount)
+        response = paystack.transaction.initialize(
+            reference=ref,  # Required first param
+            amount=int(amount * 100),  # kobo, second param
+            email=f"buyer_{user_id}@escrowsule.com",
+            callback_url=WEBHOOK_URL
+        )
+        print(f"PAYSTACK INIT RESPONSE: {response}")  # Debug: Check Railway logs
+
+        if response.get("status"):
+            pay_url = response["data"]["authorization_url"]
+            keyboard = [[InlineKeyboardButton("Pay Now 💳", url=pay_url)]]
+            await update.message.reply_text(
+                f"Trade Matched! Seller Wallet: `{wallet}`\n\n"
+                f"Amount: ₦{amount:,.0f}\n"
+                f"Reference: {ref}\n\n"
+                f"Pay below – funds held until USDT sent to wallet above 🔒",
+                reply_markup=InlineKeyboardMarkup(keyboard),
+                parse_mode="Markdown"
+            )
+            user_state.pop(user_id, None)
+        else:
+            error_msg = response.get('message', 'Unknown error')
+            await update.message.reply_text(f"Payment setup failed: {error_msg}. Try again.")
+            print(f"PAYSTACK ERROR: {error_msg}")  # Debug
+        try:
+            amount = float(text.replace(",", ""))
+            if amount < 5000:
+                await update.message.reply_text("Minimum is ₦5,000")
+                return
+        except ValueError:
+            await update.message.reply_text("Send a valid number e.g. 50000")
+            return
+
+        # Simple seller match: Find first available seller (expand to real matching later)
+        sellers = supabase.table("sellers").select("id, wallet").eq("available", True).limit(1).execute().data
+        if not sellers:
+            await update.message.reply_text("No sellers available right now. Try later!")
+            user_state.pop(user_id, None)
+            return
+        seller = sellers[0]
+        seller_id = seller["id"]
+        wallet = seller["wallet"]
+
+        # Generate unique reference
+        ref = f"escrow_{user_id}_{uuid.uuid4().hex[:8]}"
+
+        # Save trade
+        trade_data = {
+            "buyer_id": user_id,
+            "seller_id": seller_id,
+            "amount": amount,
+            "paystack_ref": ref,
+            "seller_wallet": wallet,
+            "status": "pending"
+        }
+        supabase.table("trades").insert(trade_data).execute()
+
         # Initialize Paystack payment
         response = paystack.transaction.initialize(
             amount=int(amount * 100),  # kobo

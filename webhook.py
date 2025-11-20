@@ -1,5 +1,7 @@
 from flask import Flask, request, abort
 import os
+import hmac
+import hashlib
 from paystackapi.paystack import Paystack
 from supabase import create_client
 from dotenv import load_dotenv
@@ -9,18 +11,27 @@ app = Flask(__name__)
 
 # Initialize clients
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
-paystack = Paystack(secret_key=os.getenv("PAYSTACK_SECRET_KEY"))  # Instance fix
+paystack = Paystack(secret_key=os.getenv("PAYSTACK_SECRET_KEY"))
 
 @app.route("/webhook", methods=["POST"])
 def paystack_webhook():
     payload = request.get_data(as_text=True)
     signature = request.headers.get("x-paystack-signature")
+    secret_key = os.getenv("PAYSTACK_SECRET_KEY")
 
-    # Verify it's really Paystack
-    if not paystack.webhook.verify_payload(payload, signature):
+    # Verify it's really Paystack (manual HMAC per docs)
+    expected_sig = hmac.new(
+        secret_key.encode(),
+        payload.encode(),
+        hashlib.sha512
+    ).hexdigest()
+    
+    if not hmac.compare_digest(signature or '', expected_sig):
+        print(f"WEBHOOK SIG FAIL: Got {signature}, Expected {expected_sig[:10]}...")
         abort(400)
 
     event = request.get_json()
+    print(f"WEBHOOK EVENT: {event}")  # Debug
 
     if event["event"] == "charge.success":
         ref = event["data"]["reference"]
