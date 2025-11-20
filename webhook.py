@@ -1,6 +1,6 @@
 from flask import Flask, request, abort
 import os
-import paystack
+from paystackapi.paystack import Paystack
 from supabase import create_client
 from dotenv import load_dotenv
 
@@ -9,7 +9,7 @@ app = Flask(__name__)
 
 # Initialize clients
 supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
-paystack.secret_key = os.getenv("PAYSTACK_SECRET_KEY")
+paystack = Paystack(secret_key=os.getenv("PAYSTACK_SECRET_KEY"))  # Instance fix
 
 @app.route("/webhook", methods=["POST"])
 def paystack_webhook():
@@ -17,7 +17,7 @@ def paystack_webhook():
     signature = request.headers.get("x-paystack-signature")
 
     # Verify it's really Paystack
-    if not paystack.webhook.verify_signature(payload, signature):
+    if not paystack.webhook.verify_payload(payload, signature):
         abort(400)
 
     event = request.get_json()

@@ -1,7 +1,10 @@
-python-telegram-bot==20.7
-supabase==2.4.0
-paystack==1.5.0
-flask==3.0.3
-gunicorn==22.0.0
+pytelegrambotapi==4.22.1
+supabase==2.8.1
+gotrue==2.8.1
+postgrest==0.16.1
 python-dotenv==1.0.1
-httpx==0.25.2 
+paystackapi==2.1.3
+httpx==0.27.2
+httpcore==1.0.5
+gunicorn==22.0.0
+flask==3.0.3
